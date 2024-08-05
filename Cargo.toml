@@ -1,0 +1,8 @@
+[package]
+name = "model-fs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+km-checker = { git = "https://github.com/LJxTHUCS/km-checker.git", features = ["derive"] }
+km-command = { git = "https://github.com/LJxTHUCS/km-command.git", features = ["checker", "postcard"] }
