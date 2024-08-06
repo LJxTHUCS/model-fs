@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-km-checker = { git = "https://github.com/LJxTHUCS/km-checker.git", features = ["derive"] }
-km-command = { git = "https://github.com/LJxTHUCS/km-command.git", features = ["checker", "postcard"] }
+km-checker = { path = "../framework/km-checker", features = ["derive"] }
+km-command = { path = "../framework/km-command", features = ["checker", "postcard"] }
+bitflags = "2.6.0"
