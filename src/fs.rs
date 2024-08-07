@@ -1,44 +1,9 @@
 use crate::path::AbsPath;
-use bitflags::bitflags;
 use km_checker::{
     state::{Ignored, ValueSet},
     AbstractState,
 };
-use km_command::fs::OpenFlags;
-
-bitflags! {
-    /// File permission mode.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct FileMode: u32 {
-        /// User readable.
-        const USER_READ = 0o400;
-        /// User writable.
-        const USER_WRITE = 0o200;
-        /// User executable.
-        const USER_EXEC = 0o100;
-        /// Group readable.
-        const GROUP_READ = 0o040;
-        /// Group writable.
-        const GROUP_WRITE = 0o020;
-        /// Group executable.
-        const GROUP_EXEC = 0o010;
-        /// Other readable.
-        const OTHER_READ = 0o004;
-        /// Other writable.
-        const OTHER_WRITE = 0o002;
-        /// Other executable.
-        const OTHER_EXEC = 0o001;
-    }
-}
-
-impl AbstractState for FileMode {
-    fn matches(&self, other: &Self) -> bool {
-        self == other
-    }
-    fn update(&mut self, other: &Self) {
-        *self = *other;
-    }
-}
+use km_command::fs::{FileMode, OpenFlags};
 
 /// File kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +24,7 @@ impl AbstractState for FileKind {
 /// File status, the abstract state of a file.
 #[derive(Debug, Clone, AbstractState)]
 pub struct FileStatus {
-    pub mode: FileMode,
+    pub mode: u32,
     pub nlink: usize,
     pub uid: usize,
     pub gid: usize,
@@ -121,9 +86,33 @@ pub enum FsError {
     NotDirectory,
     /// File not opened.
     NotOpened,
+    /// No available file descriptor.
+    NoAvailableFd,
 }
 
 impl FileSystem {
+    /// Get file descriptor by fd.
+    pub fn get_fd(&self, fd: isize) -> Result<&FileDescriptor, FsError> {
+        if fd < 0 || fd as usize >= self.control.fd_table.len() {
+            return Err(FsError::NotOpened);
+        } else {
+            self.control.fd_table[fd as usize]
+                .as_ref()
+                .ok_or(FsError::NotOpened)
+        }
+    }
+    
+    /// Find the lowest available posistion in the fd table and write `fd` into it.
+    pub fn alloc_fd(&mut self, fd: FileDescriptor) -> Result<isize, FsError> {
+        for (i, e) in self.control.fd_table.iter_mut().enumerate() {
+            if e.is_none() {
+                *e = Some(fd);
+                return Ok(i as isize);
+            }
+        }
+        Err(FsError::NoAvailableFd)
+    }
+
     /// Parse `path` argument of fs syscall. For `openat`, `linkat`, `mkdirat` ...
     ///
     /// The dirfd argument is used in conjunction with the pathname
@@ -156,12 +145,13 @@ impl FileSystem {
                 Ok(self.cwd.concat_rel(path))
             } else {
                 let fd = self.control.fd_table[dirfd as usize]
-                    .as_ref()
-                    .ok_or(FsError::NotOpened)?;
+                .as_ref()
+                .ok_or(FsError::NotOpened)?;
                 Ok(fd.path.concat_rel(path))
             }
         }
     }
+    
 
     /// Lookup the inode by path.
     pub fn lookup(&self, path: &AbsPath) -> Result<&Inode, FsError> {
@@ -188,4 +178,5 @@ impl FileSystem {
     ) -> Result<(), FsError> {
         todo!()
     }
+
 }
