@@ -33,24 +33,15 @@ pub struct Inode {
 }
 
 impl Inode {
-    /// Create a new regular file inode.
-    pub fn new_file(mode: FileMode, uid: u32, gid: u32) -> Self {
+    /// Create a new inode.
+    pub fn new(mode: FileMode, uid: u32, gid: u32, kind: FileKind) -> Self {
+        let nlink = if kind == FileKind::Directory { 2 } else { 1 };
         Self {
             mode,
             uid,
             gid,
-            nlink: 1,
-            kind: FileKind::File,
-        }
-    }
-    /// Create a new directory inode.
-    pub fn new_dir(mode: FileMode, uid: u32, gid: u32) -> Self {
-        Self {
-            mode,
-            uid,
-            gid,
-            nlink: 2, // "."
-            kind: FileKind::Directory,
+            nlink,
+            kind,
         }
     }
     /// Check if the file is a directory.
