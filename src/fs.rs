@@ -1,106 +1,60 @@
+use crate::inode::Inode;
 use crate::path::AbsPath;
-use km_checker::{
-    state::{Ignored, ValueSet},
-    AbstractState,
-};
+use crate::{error::FsError, inode::FileKind};
+use km_checker::AbstractState;
 use km_command::fs::{FileMode, OpenFlags};
+use multi_key_map::MultiKeyMap;
 use std::sync::Arc;
-
-/// File kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileKind {
-    File,
-    Directory,
-}
-
-impl AbstractState for FileKind {
-    fn matches(&self, other: &Self) -> bool {
-        self == other
-    }
-    fn update(&mut self, other: &Self) {
-        *self = *other;
-    }
-}
-
-/// File status, the abstract state of a file.
-#[derive(Debug, Clone, AbstractState)]
-pub struct FileStatus {
-    pub mode: u32,
-    pub nlink: usize,
-    pub uid: usize,
-    pub gid: usize,
-}
-
-/// File system I-node type, regular file or directory.
-#[derive(Debug, Clone, AbstractState)]
-pub struct Inode {
-    /// Relative path under direct parent directory.
-    pub name: String,
-    /// File kind.
-    pub kind: FileKind,
-    /// File status.
-    pub status: FileStatus,
-    /// `Some(entries)` for directory, `None` for regular file.
-    pub entries: Option<ValueSet<Inode>>,
-}
-
-impl Inode {
-    pub fn is_dir(&self) -> bool {
-        self.kind == FileKind::Directory
-    }
-    pub fn is_file(&self) -> bool {
-        self.kind == FileKind::File
-    }
-}
 
 /// File descriptor table entry.
 #[derive(Debug, Clone)]
 pub struct FileDescriptor {
     pub path: AbsPath,
-    pub oflags: OpenFlags,
+    pub flags: OpenFlags,
 }
 
+/// File descriptor table size.
 pub const FD_TABLE_SIZE: usize = 256;
 
+/// Special file descriptor representing the current working directory.
 pub const FDCWD: isize = -100;
 
 /// Abstract state of the file system.
-#[derive(Debug, AbstractState)]
+#[derive(Debug)]
 pub struct FileSystem {
-    /// Root directory.
-    pub root: Inode,
     /// Current working directory.
     pub cwd: AbsPath,
+    /// User ID.
+    pub uid: u32,
+    /// Group ID.
+    pub gid: u32,
+    /// Inodes.
+    pub inodes: MultiKeyMap<AbsPath, Inode>,
     /// File descriptor table.
-    pub fd_table: Ignored<[Option<Arc<FileDescriptor>>; FD_TABLE_SIZE]>,
+    pub fd_table: [Option<Arc<FileDescriptor>>; FD_TABLE_SIZE],
 }
 
-/// File system error.
-#[derive(Debug, Clone, Copy)]
-pub enum FsError {
-    /// File not found.
-    NotFound,
-    /// Permission denied.
-    PermissionDenied,
-    /// File already exists.
-    AlreadyExists,
-    /// File is a directory.
-    IsDirectory,
-    /// File is not a directory.
-    NotDirectory,
-    /// File not opened.
-    NotOpened,
-    /// No available file descriptor.
-    NoAvailableFd,
-}
-
-impl Into<isize> for FsError {
-    fn into(self) -> isize {
-        -1
+impl AbstractState for FileSystem {
+    fn matches(&self, other: &Self) -> bool {
+        self.cwd == other.cwd
+            && self.uid == other.uid
+            && self.gid == other.gid
+            && self.inodes == other.inodes
+    }
+    fn update(&mut self, other: &Self) {
+        self.cwd = other.cwd.clone();
+        self.uid = other.uid;
+        self.gid = other.gid;
+        self.inodes = other.inodes.clone();
     }
 }
 
 impl FileSystem {
+    /// Get root inode.
+    pub fn root(&self) -> &Inode {
+        self.inodes.get(&AbsPath::root()).unwrap()
+    }
+
     /// Get file descriptor by fd.
     pub fn get_fd(&self, fd: isize) -> Result<Arc<FileDescriptor>, FsError> {
         if fd < 0 || fd as usize >= self.fd_table.len() {
@@ -142,6 +96,33 @@ impl FileSystem {
         }
     }
 
+    /// Lookup the inode by path.
+    pub fn lookup(&self, path: &AbsPath) -> Result<Inode, FsError> {
+        self.inodes.get(path).cloned().ok_or(FsError::NotFound)
+    }
+
+    /// Create a file by path.
+    pub fn create_file(&mut self, path: &AbsPath, mode: FileMode) -> Result<(), FsError> {
+        if self.inodes.get(path).is_some() {
+            return Err(FsError::AlreadyExists);
+        }
+        let inode = Inode::new_file(mode, self.uid, self.gid);
+        self.inodes.insert(path.clone(), inode);
+        Ok(())
+    }
+
+    /// Create a directory by path.
+    pub fn create_dir(&mut self, path: &AbsPath, mode: FileMode) -> Result<(), FsError> {
+        if self.inodes.get(path).is_some() {
+            return Err(FsError::AlreadyExists);
+        }
+        let inode = Inode::new_dir(mode, self.uid, self.gid);
+        self.inodes.insert(path.clone(), inode);
+        // Alias "."
+        self.inodes.alias(path, path.join("."));
+        Ok(())
+    }
+
     /// Parse `path` argument of fs syscall. For `openat`, `linkat`, `mkdirat` ...
     ///
     /// The dirfd argument is used in conjunction with the pathname
@@ -168,42 +149,16 @@ impl FileSystem {
         path: &km_command::fs::Path,
     ) -> Result<AbsPath, FsError> {
         if path.absolute() {
-            Ok(AbsPath::from_abs(path))
+            Ok(AbsPath::from_abs_command_path(path))
         } else {
             if dirfd == FDCWD {
-                Ok(self.cwd.concat_rel(path))
+                Ok(self.cwd.from_rel_command_path(path))
             } else {
                 let fd = self.fd_table[dirfd as usize]
                     .as_ref()
                     .ok_or(FsError::NotOpened)?;
-                Ok(fd.path.concat_rel(path))
+                Ok(fd.path.from_rel_command_path(path))
             }
         }
-    }
-
-    /// Lookup the inode by path.
-    pub fn lookup(&self, path: &AbsPath) -> Result<&Inode, FsError> {
-        let mut cur = &self.root;
-        for name in path.iter() {
-            if let Some(entries) = &cur.entries {
-                cur = entries
-                    .iter()
-                    .find(|e| e.name == *name)
-                    .ok_or(FsError::NotFound)?;
-            } else {
-                return Err(FsError::NotDirectory);
-            }
-        }
-        Ok(&cur)
-    }
-
-    /// Create an inode by path.
-    pub fn create(
-        &mut self,
-        path: &AbsPath,
-        kind: FileKind,
-        mode: FileMode,
-    ) -> Result<(), FsError> {
-        todo!()
     }
 }

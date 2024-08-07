@@ -1,5 +1,4 @@
-use crate::fs::{FileDescriptor, FileKind, FileSystem, FsError, FDCWD};
-use crate::path::AbsPath;
+use crate::fs::{FileDescriptor, FileSystem, FDCWD};
 use km_checker::model_command;
 use km_command::fs::OpenFlags;
 use std::sync::Arc;
@@ -21,13 +20,13 @@ model_command!(km_command::fs, Openat, FileSystem, {
                 return Err(e);
             } else {
                 // Create file
-                state!().create(&path, FileKind::File, get!(mode))?;
+                state!().create_file(&path, get!(mode))?;
             }
         }
         // Find available file descriptor
         state!().alloc_fd(Arc::new(FileDescriptor {
             path,
-            oflags: get!(flags),
+            flags: get!(flags),
         }))
     })()
     .map_or_else(|e| e.into(), |fd| fd)

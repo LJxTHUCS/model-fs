@@ -131,7 +131,12 @@ dependencies = [
  "bitflags",
  "km-checker",
  "km-command",
+ "multi-key-map",
 ]
+
+[[package]]
+name = "multi-key-map"
+version = "0.1.0"
 
 [[package]]
 name = "postcard"
