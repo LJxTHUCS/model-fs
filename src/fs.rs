@@ -2,7 +2,7 @@ use crate::inode::Inode;
 use crate::path::{AbsPath, RelPath};
 use crate::{error::FsError, inode::FileKind};
 use km_checker::AbstractState;
-use km_command::fs::{FileMode, OpenFlags};
+use km_command::fs::{FileMode, OpenFlags, Path};
 use multi_key_map::MultiKeyMap;
 use std::sync::Arc;
 
@@ -86,7 +86,8 @@ impl FileSystem {
         // Check if the new parent exists.
         self.is_dir(&newpath.parent().unwrap())?;
         // Link the inode.
-        self.inodes.alias(oldpath, newpath);
+        let rc = self.inodes.alias(oldpath, newpath).unwrap();
+        self.inodes.get_mut(oldpath).unwrap().nlink = rc;
         Ok(())
     }
 
@@ -95,7 +96,10 @@ impl FileSystem {
         // Check if the path exists.
         self.exists(path)?;
         // Unlink the inode.
-        self.inodes.remove_alias(path);
+        let rc = self.inodes.remove_alias(path).unwrap();
+        if rc != 0 {
+            self.inodes.get_mut(path).unwrap().nlink = rc;
+        }
         Ok(())
     }
 
@@ -177,7 +181,7 @@ impl FileSystem {
     ///       flag.
     ///
     /// Ref: https://man7.org/linux/man-pages/man2/open.2.html
-    pub fn parse_path(&self, dirfd: isize, path: km_command::fs::Path) -> Result<AbsPath, FsError> {
+    pub fn parse_path(&self, dirfd: isize, path: Path) -> Result<AbsPath, FsError> {
         if path.absolute() {
             Ok(AbsPath::from(path))
         } else {
