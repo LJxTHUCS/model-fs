@@ -4,6 +4,7 @@ use km_checker::{
     AbstractState,
 };
 use km_command::fs::{FileMode, OpenFlags};
+use std::sync::Arc;
 
 /// File kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,15 @@ pub struct Inode {
     pub entries: Option<ValueSet<Inode>>,
 }
 
+impl Inode {
+    pub fn is_dir(&self) -> bool {
+        self.kind == FileKind::Directory
+    }
+    pub fn is_file(&self) -> bool {
+        self.kind == FileKind::File
+    }
+}
+
 /// File descriptor table entry.
 #[derive(Debug, Clone)]
 pub struct FileDescriptor {
@@ -52,13 +62,7 @@ pub struct FileDescriptor {
 
 pub const FD_TABLE_SIZE: usize = 256;
 
-pub const AT_FDCWD: isize = -100;
-
-/// File system control info.
-#[derive(Debug)]
-pub struct FsControlBlock {
-    pub fd_table: [Option<FileDescriptor>; FD_TABLE_SIZE],
-}
+pub const FDCWD: isize = -100;
 
 /// Abstract state of the file system.
 #[derive(Debug, AbstractState)]
@@ -67,8 +71,8 @@ pub struct FileSystem {
     pub root: Inode,
     /// Current working directory.
     pub cwd: AbsPath,
-    /// Control info.
-    pub control: Ignored<FsControlBlock>,
+    /// File descriptor table.
+    pub fd_table: Ignored<[Option<Arc<FileDescriptor>>; FD_TABLE_SIZE]>,
 }
 
 /// File system error.
@@ -90,27 +94,52 @@ pub enum FsError {
     NoAvailableFd,
 }
 
+impl Into<isize> for FsError {
+    fn into(self) -> isize {
+        -1
+    }
+}
+
 impl FileSystem {
     /// Get file descriptor by fd.
-    pub fn get_fd(&self, fd: isize) -> Result<&FileDescriptor, FsError> {
-        if fd < 0 || fd as usize >= self.control.fd_table.len() {
+    pub fn get_fd(&self, fd: isize) -> Result<Arc<FileDescriptor>, FsError> {
+        if fd < 0 || fd as usize >= self.fd_table.len() {
             return Err(FsError::NotOpened);
         } else {
-            self.control.fd_table[fd as usize]
-                .as_ref()
-                .ok_or(FsError::NotOpened)
+            self.fd_table[fd as usize].clone().ok_or(FsError::NotOpened)
         }
     }
-    
+
     /// Find the lowest available posistion in the fd table and write `fd` into it.
-    pub fn alloc_fd(&mut self, fd: FileDescriptor) -> Result<isize, FsError> {
-        for (i, e) in self.control.fd_table.iter_mut().enumerate() {
+    pub fn alloc_fd(&mut self, fd: Arc<FileDescriptor>) -> Result<isize, FsError> {
+        for (i, e) in self.fd_table.iter_mut().enumerate() {
             if e.is_none() {
                 *e = Some(fd);
                 return Ok(i as isize);
             }
         }
         Err(FsError::NoAvailableFd)
+    }
+
+    /// Free the file descriptor.
+    pub fn free_fd(&mut self, fd: isize) -> Result<(), FsError> {
+        if self.get_fd(fd).is_ok() {
+            self.fd_table[fd as usize] = None;
+            Ok(())
+        } else {
+            Err(FsError::NotOpened)
+        }
+    }
+
+    /// Change the current working directory.
+    pub fn chdir(&mut self, path: &AbsPath) -> Result<(), FsError> {
+        let inode = self.lookup(path)?;
+        if inode.is_dir() {
+            self.cwd = path.clone();
+            Ok(())
+        } else {
+            Err(FsError::NotDirectory)
+        }
     }
 
     /// Parse `path` argument of fs syscall. For `openat`, `linkat`, `mkdirat` ...
@@ -141,17 +170,16 @@ impl FileSystem {
         if path.absolute() {
             Ok(AbsPath::from_abs(path))
         } else {
-            if dirfd == AT_FDCWD {
+            if dirfd == FDCWD {
                 Ok(self.cwd.concat_rel(path))
             } else {
-                let fd = self.control.fd_table[dirfd as usize]
-                .as_ref()
-                .ok_or(FsError::NotOpened)?;
+                let fd = self.fd_table[dirfd as usize]
+                    .as_ref()
+                    .ok_or(FsError::NotOpened)?;
                 Ok(fd.path.concat_rel(path))
             }
         }
     }
-    
 
     /// Lookup the inode by path.
     pub fn lookup(&self, path: &AbsPath) -> Result<&Inode, FsError> {
@@ -178,5 +206,4 @@ impl FileSystem {
     ) -> Result<(), FsError> {
         todo!()
     }
-
 }
