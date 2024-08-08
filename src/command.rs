@@ -39,6 +39,14 @@ model_command!(km_command::fs, Close, FileSystem, {
     (|| state!().free_fd(get!(fd)))().map_or_else(|e| e.into(), |_| 0)
 });
 
+model_command!(km_command::fs, Mkdirat, FileSystem, {
+    (|| {
+        let path = state!().parse_path(get!(dirfd), get!(path).clone())?;
+        state!().create(path, FileKind::Directory, get!(mode))
+    })()
+    .map_or_else(|e| e.into(), |_| 0)
+});
+
 model_command!(km_command::fs, Linkat, FileSystem, {
     (|| {
         // Parse paths
@@ -68,5 +76,3 @@ model_command!(km_command::fs, Dup, FileSystem, {
     })()
     .map_or_else(|e| e.into(), |fd| fd)
 });
-
-model_command!(km_command::fs, Getdents, FileSystem, { 0 });

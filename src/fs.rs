@@ -51,6 +51,34 @@ impl AbstractState for FileSystem {
 }
 
 impl FileSystem {
+    /// Create a new file system, initializing the root directory.
+    pub fn new(uid: u32, gid: u32) -> Self {
+        // Set the current working directory to root.
+        let cwd = AbsPath::root();
+        // Initialize the file descriptor table.
+        const NONE_FD: Option<Arc<FileDescriptor>> = None;
+        let fd_table = [NONE_FD; FD_TABLE_SIZE];
+        // Create fs.
+        let mut fs = Self {
+            cwd,
+            uid,
+            gid,
+            inodes: MultiKeyMap::new(),
+            fd_table,
+        };
+        // Initialize root directory.
+        fs.inodes.insert(
+            AbsPath::root(),
+            Inode::new(FileMode::all(), uid, gid, FileKind::Directory),
+        );
+        // Link "/." and "/.."
+        fs.link(&AbsPath::root(), AbsPath::root().join(&RelPath::cur()))
+            .unwrap();
+        fs.link(&AbsPath::root(), AbsPath::root().join(&RelPath::parent()))
+            .unwrap();
+        fs
+    }
+
     /// Check if `path` exists.
     pub fn exists(&self, path: &AbsPath) -> Result<(), FsError> {
         if self.inodes.get(path).is_some() {

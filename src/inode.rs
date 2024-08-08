@@ -34,6 +34,8 @@ pub struct Inode {
 
 impl Inode {
     /// Create a new inode.
+    /// 
+    /// Set link count to 1 for regular file, 2 for directory.
     pub fn new(mode: FileMode, uid: u32, gid: u32, kind: FileKind) -> Self {
         let nlink = if kind == FileKind::Directory { 2 } else { 1 };
         Self {
