@@ -4,6 +4,7 @@ use crate::{error::FsError, inode::FileKind};
 use km_checker::AbstractState;
 use km_command::fs::{FileMode, OpenFlags, Path};
 use multi_key_map::MultiKeyMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// File descriptor table entry.
@@ -20,7 +21,7 @@ pub const FD_TABLE_SIZE: usize = 256;
 pub const FDCWD: isize = -100;
 
 /// Abstract state of the file system.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FileSystem {
     /// Current working directory.
     pub cwd: AbsPath,
@@ -50,6 +51,22 @@ impl AbstractState for FileSystem {
     }
 }
 
+impl Debug for FileSystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("File System:\n")?;
+        f.write_fmt(format_args!("  cwd: {:?}\n", self.cwd))?;
+        f.write_fmt(format_args!("  uid: {}\n", self.uid))?;
+        f.write_fmt(format_args!("  gid: {}\n", self.gid))?;
+        f.write_str("directory structure:\n")?;
+        let mut paths = self.inodes.keys();
+        paths.sort();
+        for path in paths {
+            f.write_fmt(format_args!("  {:?}\n", path))?;
+        }
+        Ok(())
+    }
+}
+
 impl FileSystem {
     /// Create a new file system, initializing the root directory.
     pub fn new(uid: u32, gid: u32) -> Self {
@@ -71,11 +88,8 @@ impl FileSystem {
             AbsPath::root(),
             Inode::new(FileMode::all(), uid, gid, FileKind::Directory),
         );
-        // Link "/." and "/.."
-        fs.link(&AbsPath::root(), AbsPath::root().join(&RelPath::cur()))
-            .unwrap();
-        fs.link(&AbsPath::root(), AbsPath::root().join(&RelPath::parent()))
-            .unwrap();
+        // Link "/.."
+        fs.increase_nlink(&AbsPath::root()).unwrap();
         fs
     }
 
@@ -107,10 +121,14 @@ impl FileSystem {
         self.inodes.get(path).cloned().ok_or(FsError::NotFound)
     }
 
-    /// Link an inode.
+    /// Makr a new name for an inode.
     pub fn link(&mut self, oldpath: &AbsPath, newpath: AbsPath) -> Result<(), FsError> {
         // Check if the old path exists.
         self.exists(oldpath)?;
+        // Check if old path is a directory.
+        if self.inodes.get(oldpath).unwrap().is_dir() {
+            return Err(FsError::IsDirectory);
+        }
         // Check if the new path does not exist.
         if self.exists(&newpath).is_ok() {
             return Err(FsError::AlreadyExists);
@@ -118,21 +136,24 @@ impl FileSystem {
         // Check if the new parent exists.
         self.is_dir(&newpath.parent().unwrap())?;
         // Link the inode.
-        let _rc = self.inodes.insert_alias(oldpath, newpath).unwrap();
-        self.inodes.get_mut(oldpath).unwrap().nlink += 1;
-        Ok(())
+        self.inodes.insert_alias(oldpath, newpath);
+        self.increase_nlink(oldpath)
     }
 
-    /// Unlink an inode.
+    /// Delete a name and possibly the inode it refer to
     pub fn unlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
         // Check if the path exists.
         self.exists(path)?;
+        // If inode is a directory, update parent link count
+        if self.inodes.get(path).unwrap().is_dir() {
+            self.decrease_nlink(&path.parent().unwrap())?;
+        }
         // Unlink the inode.
-        let mut aliases = self.inodes.aliases(path).unwrap();
-        let _rc = self.inodes.remove_alias(path).unwrap();
-        aliases.retain(|p| p != path);
-        if !aliases.is_empty() {
-            self.inodes.get_mut(&aliases[0]).unwrap().nlink -= 1;
+        let aliases = self.inodes.aliases(path).unwrap();
+        let nlink = self.inodes.remove_alias(path).unwrap();
+        // If inode is not removed, update link count
+        if nlink != 0 {
+            self.decrease_nlink(aliases.iter().find(|&e| e != path).unwrap())?;
         }
         Ok(())
     }
@@ -148,10 +169,9 @@ impl FileSystem {
         // Create the inode.
         let inode = Inode::new(mode, self.uid, self.gid, kind);
         self.inodes.insert(path.clone(), inode);
-        // If `inode` is a directory, then create a `.` and `..` link.
+        // If `inode` is a directory, update parent link count
         if kind == FileKind::Directory {
-            self.link(&path, path.join(&RelPath::cur()))?;
-            self.link(&path.parent().unwrap(), path.join(&RelPath::parent()))?;
+            self.increase_nlink(&path.parent().unwrap())?;
         }
         Ok(())
     }
@@ -240,5 +260,19 @@ impl FileSystem {
                 Ok(fd.path.join(&RelPath::from(path)))
             }
         }
+    }
+
+    /// Increase link count of an inode
+    fn increase_nlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
+        let inode = self.inodes.get_mut(path).ok_or(FsError::NotFound)?;
+        inode.nlink += 1;
+        Ok(())
+    }
+
+    /// Decrease link count of an inode
+    fn decrease_nlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
+        let inode = self.inodes.get_mut(path).ok_or(FsError::NotFound)?;
+        inode.nlink -= 1;
+        Ok(())
     }
 }
