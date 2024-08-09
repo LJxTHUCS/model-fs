@@ -20,7 +20,7 @@ pub const FD_TABLE_SIZE: usize = 256;
 pub const FDCWD: isize = -100;
 
 /// Abstract state of the file system.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileSystem {
     /// Current working directory.
     pub cwd: AbsPath,
@@ -134,7 +134,9 @@ impl FileSystem {
     /// Create an inode by path.
     pub fn create(&mut self, path: AbsPath, kind: FileKind, mode: FileMode) -> Result<(), FsError> {
         // Check if the file already exists.
-        self.exists(&path)?;
+        if self.exists(&path).is_ok() {
+            return Err(FsError::AlreadyExists);
+        }
         // Check if the parent directory exists.
         self.is_dir(&path.parent().unwrap())?;
         // Create the inode.
@@ -157,6 +159,16 @@ impl FileSystem {
         } else {
             Err(FsError::NotDirectory)
         }
+    }
+
+    /// Get all available file descriptors.
+    pub fn all_fds(&self) -> Vec<isize> {
+        self.fd_table
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.is_some())
+            .map(|(i, _)| i as isize)
+            .collect()
     }
 
     /// Get file descriptor by fd.

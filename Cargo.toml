@@ -7,4 +7,6 @@ edition = "2021"
 km-checker = { path = "../framework/km-checker", features = ["derive"] }
 km-command = { path = "../framework/km-command", features = ["checker", "postcard"] }
 multi-key-map = { path = "../multi-key-map" }
+cmdgen = { path = "../cmdgen" }
 bitflags = "2.6.0"
+heapless = "0.8.0"

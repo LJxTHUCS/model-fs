@@ -3,6 +3,7 @@ mod error;
 mod fs;
 mod inode;
 mod path;
+mod commander;
 
-#[cfg(test)]
-mod test;
+pub use commander::FsCommander;
+pub use fs::FileSystem;
