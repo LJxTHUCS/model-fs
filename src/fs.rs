@@ -111,11 +111,15 @@ impl FileSystem {
     pub fn link(&mut self, oldpath: &AbsPath, newpath: AbsPath) -> Result<(), FsError> {
         // Check if the old path exists.
         self.exists(oldpath)?;
+        // Check if the new path does not exist.
+        if self.exists(&newpath).is_ok() {
+            return Err(FsError::AlreadyExists);
+        }
         // Check if the new parent exists.
         self.is_dir(&newpath.parent().unwrap())?;
         // Link the inode.
-        let rc = self.inodes.alias(oldpath, newpath).unwrap();
-        self.inodes.get_mut(oldpath).unwrap().nlink = rc;
+        let _rc = self.inodes.insert_alias(oldpath, newpath).unwrap();
+        self.inodes.get_mut(oldpath).unwrap().nlink += 1;
         Ok(())
     }
 
@@ -124,9 +128,11 @@ impl FileSystem {
         // Check if the path exists.
         self.exists(path)?;
         // Unlink the inode.
-        let rc = self.inodes.remove_alias(path).unwrap();
-        if rc != 0 {
-            self.inodes.get_mut(path).unwrap().nlink = rc;
+        let mut aliases = self.inodes.aliases(path).unwrap();
+        let _rc = self.inodes.remove_alias(path).unwrap();
+        aliases.retain(|p| p != path);
+        if !aliases.is_empty() {
+            self.inodes.get_mut(&aliases[0]).unwrap().nlink -= 1;
         }
         Ok(())
     }
