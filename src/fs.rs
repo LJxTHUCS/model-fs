@@ -1,5 +1,5 @@
 use crate::inode::Inode;
-use crate::path::{AbsPath, RelPath};
+use crate::path::AbsPath;
 use crate::{error::FsError, inode::FileKind};
 use km_checker::AbstractState;
 use km_command::fs::{FileMode, OpenFlags, Path};
@@ -23,8 +23,6 @@ pub const FDCWD: isize = -100;
 /// Abstract state of the file system.
 #[derive(Clone)]
 pub struct FileSystem {
-    /// Current working directory.
-    pub cwd: AbsPath,
     /// User ID.
     pub uid: u32,
     /// Group ID.
@@ -32,6 +30,8 @@ pub struct FileSystem {
     /// Inodes. An inode may have multiple absolutes paths (hard links).
     /// Each key is corresponding to an absolute path.
     pub inodes: MultiKeyMap<AbsPath, Inode>,
+    /// Current working directory.
+    pub cwd: AbsPath,
     /// File descriptor table.
     pub fd_table: [Option<Arc<FileDescriptor>>; FD_TABLE_SIZE],
 }
@@ -77,10 +77,10 @@ impl FileSystem {
         let fd_table = [NONE_FD; FD_TABLE_SIZE];
         // Create fs.
         let mut fs = Self {
-            cwd,
             uid,
             gid,
             inodes: MultiKeyMap::new(),
+            cwd,
             fd_table,
         };
         // Initialize root directory.
@@ -249,15 +249,17 @@ impl FileSystem {
     /// Ref: https://man7.org/linux/man-pages/man2/open.2.html
     pub fn parse_path(&self, dirfd: isize, path: Path) -> Result<AbsPath, FsError> {
         if path.absolute() {
-            Ok(AbsPath::from(path))
+            path.try_into()
         } else {
             if dirfd == FDCWD {
-                Ok(self.cwd.join(&RelPath::from(path)))
+                Ok(self.cwd.join(&path.try_into()?))
             } else {
-                let fd = self.fd_table[dirfd as usize]
-                    .as_ref()
-                    .ok_or(FsError::NotOpened)?;
-                Ok(fd.path.join(&RelPath::from(path)))
+                let fd = self.get_fd(dirfd)?;
+                if let Err(e) = self.is_dir(&fd.path) {
+                    Err(e)
+                } else {
+                    Ok(fd.path.join(&path.try_into()?))
+                }
             }
         }
     }

@@ -15,6 +15,8 @@ pub enum FsError {
     NotOpened,
     /// No available file descriptor.
     NoAvailableFd,
+    /// Invalid path.
+    InvalidPath,
 }
 
 impl Into<isize> for FsError {
