@@ -94,41 +94,21 @@ impl FileSystem {
     }
 
     /// Check if `path` exists.
-    pub fn exists(&self, path: &AbsPath) -> Result<(), FsError> {
-        if self.inodes.get(path).is_some() {
-            Ok(())
-        } else {
-            Err(FsError::NotFound)
-        }
+    pub fn exists(&self, path: &AbsPath) -> bool {
+        self.inodes.contains_key(path)
     }
 
-    /// Check if `path` is a valid directory.
-    pub fn is_dir(&self, path: &AbsPath) -> Result<(), FsError> {
-        match self.inodes.get(&path) {
-            Some(p) => {
-                if p.is_dir() {
-                    Ok(())
-                } else {
-                    Err(FsError::NotDirectory)
-                }
-            }
-            None => Err(FsError::NotFound),
-        }
+    /// Check if `path` exists and is a valid directory.
+    pub fn is_dir(&self, path: &AbsPath) -> bool {
+        self.inodes
+            .get(&path)
+            .map(|inode| inode.is_dir())
+            .unwrap_or(false)
     }
 
-    /// Check if a directory is empty.
-    pub fn is_empty_dir(&self, path: &AbsPath) -> Result<(), FsError> {
-        if self
-            .inodes
-            .keys()
-            .iter()
-            .find(|&e| path.is_ancestor(e))
-            .is_none()
-        {
-            Ok(())
-        } else {
-            Err(FsError::DirectoryNotEmpty)
-        }
+    /// Check if `path` exists and is an empty directory.
+    pub fn is_empty_dir(&self, path: &AbsPath) -> bool {
+        self.is_dir(path) && self.inodes.keys().iter().all(|k| !path.is_ancestor(k))
     }
 
     /// Lookup the inode by path.
@@ -138,18 +118,21 @@ impl FileSystem {
 
     /// Makr a new name for an inode.
     pub fn link(&mut self, oldpath: &AbsPath, newpath: AbsPath) -> Result<(), FsError> {
-        // Check if the old path exists.
-        self.exists(oldpath)?;
-        // Check if old path is a directory.
-        if self.inodes.get(oldpath).unwrap().is_dir() {
+        if !self.exists(oldpath) {
+            return Err(FsError::NotFound);
+        }
+        if self.is_dir(oldpath) {
             return Err(FsError::IsDirectory);
         }
-        // Check if the new path does not exist.
-        if self.exists(&newpath).is_ok() {
+        if self.exists(&newpath) {
             return Err(FsError::AlreadyExists);
         }
-        // Check if the new parent exists.
-        self.is_dir(&newpath.parent().unwrap())?;
+        if !self.exists(&newpath.parent().unwrap()) {
+            return Err(FsError::NotFound);
+        }
+        if !self.is_dir(&newpath.parent().unwrap()) {
+            return Err(FsError::NotDirectory);
+        }
         // Link the inode.
         self.inodes.insert_alias(oldpath, newpath);
         self.increase_nlink(oldpath)
@@ -157,14 +140,17 @@ impl FileSystem {
 
     /// Delete a name and possibly the inode it refer to
     pub fn unlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
-        // Check if the path exists.
-        self.exists(path)?;
-        // Check if the path is a non-empty directory.
-        if self.is_dir(path).is_ok() {
-            self.is_empty_dir(path)?;
+        if path.is_root() {
+            return Err(FsError::InvalidPath);
+        }
+        if !self.exists(path) {
+            return Err(FsError::NotFound);
+        }
+        if !self.is_empty_dir(path) {
+            return Err(FsError::DirectoryNotEmpty);
         }
         // If inode is a directory, update parent link count
-        if self.inodes.get(path).unwrap().is_dir() {
+        if self.is_dir(path) {
             self.decrease_nlink(&path.parent().unwrap())?;
         }
         // Unlink the inode.
@@ -179,12 +165,15 @@ impl FileSystem {
 
     /// Create an inode by path.
     pub fn create(&mut self, path: AbsPath, kind: FileKind, mode: FileMode) -> Result<(), FsError> {
-        // Check if the file already exists.
-        if self.exists(&path).is_ok() {
+        if self.exists(&path) {
             return Err(FsError::AlreadyExists);
         }
-        // Check if the parent directory exists.
-        self.is_dir(&path.parent().unwrap())?;
+        if !self.exists(&path.parent().unwrap()) {
+            return Err(FsError::NotFound);
+        }
+        if !self.is_dir(&path.parent().unwrap()) {
+            return Err(FsError::NotDirectory);
+        }
         // Create the inode.
         let inode = Inode::new(mode, self.uid, self.gid, kind);
         self.inodes.insert(path.clone(), inode);
@@ -274,11 +263,13 @@ impl FileSystem {
                 Ok(self.cwd.join(&path.try_into()?))
             } else {
                 let fd = self.get_fd(dirfd)?;
-                if let Err(e) = self.is_dir(&fd.path) {
-                    Err(e)
-                } else {
-                    Ok(fd.path.join(&path.try_into()?))
+                if !self.exists(&fd.path) {
+                    return Err(FsError::NotFound);
                 }
+                if !self.is_dir(&fd.path) {
+                    return Err(FsError::NotDirectory);
+                }
+                Ok(fd.path.join(&path.try_into()?))
             }
         }
     }

@@ -23,21 +23,7 @@ impl TryFrom<Path> for AbsPath {
         if !value.absolute() {
             return Err(FsError::InvalidPath);
         }
-        let mut components = Vec::new();
-        for comp in value.strip_prefix("/").unwrap().split("/") {
-            match comp {
-                "" => return Err(FsError::InvalidPath),
-                "." => continue,
-                ".." => {
-                    if components.is_empty() {
-                        return Err(FsError::InvalidPath);
-                    }
-                    components.pop();
-                }
-                _ => components.push(comp),
-            }
-        }
-        Ok(Self(components.join("/")))
+        Ok(Self(split_and_join(&value.strip_prefix("/").unwrap())?))
     }
 }
 
@@ -58,12 +44,15 @@ impl AbsPath {
         Self("".to_owned())
     }
 
-    /// Concatenate a relative path to this absolute path.
-    pub fn join(&self, rel_path: &RelPath) -> Self {
-        let mut path = self.0.clone();
-        path.push('/');
-        path.push_str(&rel_path.0);
-        Self(path)
+    /// Check if this path is root.
+    pub fn is_root(&self) -> bool {
+        self.0 == ""
+    }
+
+    /// Check if this path is an ancestor of another path.
+    pub fn is_ancestor(&self, other: &Self) -> bool {
+        let pref = self.0.clone() + "/";
+        other.0.starts_with(&pref)
     }
 
     /// Get the parent directory of this absolute path.
@@ -78,10 +67,12 @@ impl AbsPath {
         }
     }
 
-    /// Check if this path is an ancestor of another path.
-    pub fn is_ancestor(&self, other: &Self) -> bool {
-        let pref = self.0.clone() + "/";
-        other.0.starts_with(&pref)
+    /// Concatenate a relative path to this absolute path.
+    pub fn join(&self, rel_path: &RelPath) -> Self {
+        let mut path = self.0.clone();
+        path.push('/');
+        path.push_str(&rel_path.0);
+        Self(path)
     }
 }
 
@@ -101,21 +92,7 @@ impl TryFrom<Path> for RelPath {
         if !value.relative() {
             return Err(FsError::InvalidPath);
         }
-        let mut components = Vec::new();
-        for comp in value.split("/") {
-            match comp {
-                "" => return Err(FsError::InvalidPath),
-                "." => continue,
-                ".." => {
-                    if components.is_empty() {
-                        return Err(FsError::InvalidPath);
-                    }
-                    components.pop();
-                }
-                _ => components.push(comp),
-            }
-        }
-        Ok(Self(components.join("/")))
+        Ok(Self(split_and_join(&value)?))
     }
 }
 
@@ -140,4 +117,27 @@ impl RelPath {
     pub fn parent() -> Self {
         Self("..".to_owned())
     }
+}
+
+/// Split a path into components, removing "." and ".." components,
+/// then join them back together.
+fn split_and_join(path: &str) -> Result<String, FsError> {
+    if !path.contains("/") {
+        return Ok(path.to_owned());
+    }
+    let mut components = Vec::new();
+    for comp in path.split("/") {
+        match comp {
+            "" => return Err(FsError::InvalidPath),
+            "." => continue,
+            ".." => {
+                if components.is_empty() {
+                    continue;
+                }
+                components.pop();
+            }
+            _ => components.push(comp),
+        }
+    }
+    Ok(components.join("/"))
 }
