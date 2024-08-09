@@ -261,7 +261,7 @@ impl FileSystem {
             path.try_into()
         } else {
             if dirfd == FDCWD {
-                Ok(self.cwd.join(&path.try_into()?))
+                Ok(self.cwd.join(&path.try_into()?)?)
             } else {
                 let fd = self.get_fd(dirfd)?;
                 if !self.exists(&fd.path) {
@@ -270,7 +270,7 @@ impl FileSystem {
                 if !self.is_dir(&fd.path) {
                     return Err(FsError::NotDirectory);
                 }
-                Ok(fd.path.join(&path.try_into()?))
+                Ok(fd.path.join(&path.try_into()?)?)
             }
         }
     }

@@ -1,19 +1,18 @@
 use crate::error::FsError;
 use km_checker::AbstractState;
 use km_command::fs::Path;
-use std::fmt::Debug;
+use std::{fmt::Debug, vec};
 
-/// Absolute file path. Cannot contain "." or "..".
+/// Normalized absolute file path.
+///
+/// - Cannot contain "." or "..".
+/// - Cannot start or end with "/".
 #[derive(Clone, PartialEq, Eq, Hash, AbstractState, PartialOrd, Ord)]
 pub struct AbsPath(String);
 
 impl Debug for AbsPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 == "" {
-            f.write_str("/")
-        } else {
-            f.write_fmt(format_args!("{}", &self.0))
-        }
+        f.write_fmt(format_args!("/{}", &self.0))
     }
 }
 
@@ -23,7 +22,7 @@ impl TryFrom<Path> for AbsPath {
         if !value.absolute() {
             return Err(FsError::InvalidPath);
         }
-        Ok(Self(split_and_join(&value.strip_prefix("/").unwrap())?))
+        Self::normalize(&value.0)
     }
 }
 
@@ -51,32 +50,69 @@ impl AbsPath {
 
     /// Check if this path is an ancestor of another path.
     pub fn is_ancestor(&self, other: &Self) -> bool {
-        let pref = self.0.clone() + "/";
-        other.0.starts_with(&pref)
+        other.0.starts_with(&format!("{}/", self.0))
     }
 
     /// Get the parent directory of this absolute path.
     pub fn parent(&self) -> Option<Self> {
-        let path = self.0.clone();
-        if self.0 == "" {
+        if self.is_root() {
             None
         } else {
-            let mut components = path.split('/').collect::<Vec<_>>();
+            let mut components = self.0.split('/').collect::<Vec<_>>();
             components.pop();
             Some(Self(components.join("/")))
         }
     }
 
     /// Concatenate a relative path to this absolute path.
-    pub fn join(&self, rel_path: &RelPath) -> Self {
+    pub fn join(&self, rel_path: &RelPath) -> Result<Self, FsError> {
         let mut path = self.0.clone();
-        path.push('/');
+        if !path.is_empty() {
+            path.push('/');
+        }
         path.push_str(&rel_path.0);
-        Self(path)
+        Self::normalize(&path)
+    }
+
+    /// Normalize a `path` string, then create an `AbsPath`.
+    ///
+    /// - Remove leading and trailing "/".
+    /// - Remove "." and ".." components.
+    fn normalize(path: &str) -> Result<Self, FsError> {
+        // Possibly remove leading and trailing "/".
+        let path = path.strip_prefix("/").unwrap_or(path);
+        let path = path.strip_suffix("/").unwrap_or(path);
+        // Empty path is root.
+        if path.is_empty() {
+            return Ok(Self::root());
+        }
+        // Split nonempty path into components.
+        let mut normalized = vec![];
+        for component in path.split("/") {
+            match component {
+                // Empty component, error.
+                "" => return Err(FsError::InvalidPath),
+                // Current directory, do nothing.
+                "." => (),
+                // Parent directory, remove last component if possible.
+                ".." => {
+                    if !normalized.is_empty() {
+                        normalized.pop();
+                    }
+                }
+                // Normal component, add to normalized path.
+                _ => normalized.push(component),
+            }
+        }
+        if normalized.is_empty() {
+            Ok(Self::root())
+        } else {
+            Ok(Self(normalized.join("/")))
+        }
     }
 }
 
-/// Relative file path.
+/// Relative file path. Must not start with "/".
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RelPath(String);
 
@@ -92,7 +128,7 @@ impl TryFrom<Path> for RelPath {
         if !value.relative() {
             return Err(FsError::InvalidPath);
         }
-        Ok(Self(split_and_join(&value)?))
+        Ok(Self(value.to_string()))
     }
 }
 
@@ -117,27 +153,4 @@ impl RelPath {
     pub fn parent() -> Self {
         Self("..".to_owned())
     }
-}
-
-/// Split a path into components, removing "." and ".." components,
-/// then join them back together.
-fn split_and_join(path: &str) -> Result<String, FsError> {
-    if !path.contains("/") {
-        return Ok(path.to_owned());
-    }
-    let mut components = Vec::new();
-    for comp in path.split("/") {
-        match comp {
-            "" => return Err(FsError::InvalidPath),
-            "." => continue,
-            ".." => {
-                if components.is_empty() {
-                    continue;
-                }
-                components.pop();
-            }
-            _ => components.push(comp),
-        }
-    }
-    Ok(components.join("/"))
 }

@@ -40,28 +40,28 @@ impl Commander<FileSystem> for FsCommander {
         let cmd: Box<dyn Command<FileSystem>> = match cmd_gen.generate() {
             0 => Box::new(ModelOpenat::from(Openat::new(
                 fd_gen.generate(),
-                translate_path(&rel_path_gen.generate()),
+                translate_rel_path(&rel_path_gen.generate()),
                 OpenFlags::from_bits_truncate(oflags_gen.generate()),
                 FileMode::from_bits_truncate(fmode_gen.generate()),
             ))),
             1 => Box::new(ModelClose::from(Close::new(fd_gen.generate()))),
-            2 => Box::new(ModelChdir::from(Chdir::new(translate_path(
+            2 => Box::new(ModelChdir::from(Chdir::new(translate_abs_path(
                 &abs_path_gen.generate(),
             )))),
             3 => Box::new(ModelMkdirat::from(Mkdirat::new(
                 fd_gen.generate(),
-                translate_path(&rel_path_gen.generate()),
+                translate_rel_path(&rel_path_gen.generate()),
                 FileMode::from_bits_truncate(fmode_gen.generate()),
             ))),
             4 => Box::new(ModelUnlinkat::from(Unlinkat::new(
                 fd_gen.generate(),
-                translate_path(&rel_path_gen.generate()),
+                translate_rel_path(&rel_path_gen.generate()),
             ))),
             5 => Box::new(ModelLinkat::from(Linkat::new(
                 fd_gen.generate(),
-                translate_path(&rel_path_gen.generate()),
+                translate_rel_path(&rel_path_gen.generate()),
                 fd_gen.generate(),
-                translate_path(&rel_path_gen.generate()),
+                translate_rel_path(&rel_path_gen.generate()),
             ))),
             6 => Box::new(ModelDup::from(Dup::new(fd_gen.generate()))),
             _ => unreachable!(),
@@ -70,6 +70,10 @@ impl Commander<FileSystem> for FsCommander {
     }
 }
 
-fn translate_path(path: &str) -> km_command::fs::Path {
+fn translate_rel_path(path: &str) -> km_command::fs::Path {
     km_command::fs::Path(heapless::String::from_str(path).unwrap())
+}
+
+fn translate_abs_path(path: &str) -> km_command::fs::Path {
+    km_command::fs::Path(heapless::String::from_str(&("/".to_owned() + path)).unwrap())
 }
