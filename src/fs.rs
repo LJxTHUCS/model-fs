@@ -185,14 +185,15 @@ impl FileSystem {
     }
 
     /// Change the current working directory.
-    pub fn chdir(&mut self, path: &AbsPath) -> Result<(), FsError> {
-        let inode = self.lookup(path)?;
-        if inode.is_dir() {
-            self.cwd = path.clone();
-            Ok(())
-        } else {
-            Err(FsError::NotDirectory)
+    pub fn chdir(&mut self, path: AbsPath) -> Result<(), FsError> {
+        if !self.exists(&path) {
+            return Err(FsError::NotFound);
         }
+        if !self.is_dir(&path) {
+            return Err(FsError::NotDirectory);
+        }
+        self.cwd = path;
+        Ok(())
     }
 
     /// Get all available file descriptors.

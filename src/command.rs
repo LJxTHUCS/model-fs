@@ -1,5 +1,5 @@
 use crate::{
-    fs::{FileDescriptor, FileSystem, FDCWD},
+    fs::{FileDescriptor, FileSystem},
     inode::FileKind,
 };
 use km_checker::model_command;
@@ -7,11 +7,7 @@ use km_command::fs::OpenFlags;
 use std::sync::Arc;
 
 model_command!(km_command::fs, Chdir, FileSystem, {
-    (|| {
-        let path = state!().parse_path(FDCWD, get!(path).clone())?;
-        state!().chdir(&path)
-    })()
-    .map_or_else(|e| e.into(), |_| 0)
+    (|| state!().chdir(get!(path).clone().try_into()?))().map_or_else(|e| e.into(), |_| 0)
 });
 
 model_command!(km_command::fs, Openat, FileSystem, {
