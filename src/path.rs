@@ -77,6 +77,12 @@ impl AbsPath {
             Some(Self(components.join("/")))
         }
     }
+
+    /// Check if this path is an ancestor of another path.
+    pub fn is_ancestor(&self, other: &Self) -> bool {
+        let pref = self.0.clone() + "/";
+        other.0.starts_with(&pref)
+    }
 }
 
 /// Relative file path.

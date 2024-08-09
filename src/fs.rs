@@ -116,6 +116,21 @@ impl FileSystem {
         }
     }
 
+    /// Check if a directory is empty.
+    pub fn is_empty_dir(&self, path: &AbsPath) -> Result<(), FsError> {
+        if self
+            .inodes
+            .keys()
+            .iter()
+            .find(|&e| path.is_ancestor(e))
+            .is_none()
+        {
+            Ok(())
+        } else {
+            Err(FsError::DirectoryNotEmpty)
+        }
+    }
+
     /// Lookup the inode by path.
     pub fn lookup(&self, path: &AbsPath) -> Result<Inode, FsError> {
         self.inodes.get(path).cloned().ok_or(FsError::NotFound)
@@ -144,6 +159,10 @@ impl FileSystem {
     pub fn unlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
         // Check if the path exists.
         self.exists(path)?;
+        // Check if the path is a non-empty directory.
+        if self.is_dir(path).is_ok() {
+            self.is_empty_dir(path)?;
+        }
         // If inode is a directory, update parent link count
         if self.inodes.get(path).unwrap().is_dir() {
             self.decrease_nlink(&path.parent().unwrap())?;

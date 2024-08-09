@@ -17,6 +17,8 @@ pub enum FsError {
     NoAvailableFd,
     /// Invalid path.
     InvalidPath,
+    /// Directory is not empty.
+    DirectoryNotEmpty,
 }
 
 impl Into<isize> for FsError {
