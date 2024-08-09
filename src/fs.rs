@@ -61,7 +61,7 @@ impl Debug for FileSystem {
         let mut paths = self.inodes.keys();
         paths.sort();
         for path in paths {
-            f.write_fmt(format_args!("  {:?}\n", path))?;
+            f.write_fmt(format_args!("{:?}\t {:?}\n", path, self.inodes.get(&path).unwrap()))?;
         }
         Ok(())
     }
@@ -83,13 +83,12 @@ impl FileSystem {
             cwd,
             fd_table,
         };
-        // Initialize root directory.
+        // Initialize root directory. The `nlink` of the root directory is 2
+        // ("." and ".."), which also matches the initialization of the inode.
         fs.inodes.insert(
             AbsPath::root(),
             Inode::new(FileMode::all(), uid, gid, FileKind::Directory),
         );
-        // Link "/.."
-        fs.increase_nlink(&AbsPath::root()).unwrap();
         fs
     }
 
