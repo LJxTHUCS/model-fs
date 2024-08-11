@@ -1,3 +1,5 @@
+use km_command::linux_err;
+
 /// File system error.
 #[derive(Debug, Clone, Copy)]
 pub enum FsError {
@@ -23,7 +25,16 @@ pub enum FsError {
 
 impl Into<isize> for FsError {
     fn into(self) -> isize {
-        // TODO
-        -1
+        match self {
+            FsError::NotFound => linux_err!(ENOENT),
+            FsError::PermissionDenied => linux_err!(EACCES),
+            FsError::AlreadyExists => linux_err!(EEXIST),
+            FsError::IsDirectory => linux_err!(EISDIR),
+            FsError::NotDirectory => linux_err!(ENOTDIR),
+            FsError::NotOpened => linux_err!(EBADFD),
+            FsError::NoAvailableFd => linux_err!(EBADFD),
+            FsError::InvalidPath => linux_err!(EINVAL),
+            FsError::DirectoryNotEmpty => linux_err!(ENOTEMPTY),
+        }
     }
 }

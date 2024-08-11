@@ -118,7 +118,6 @@ name = "km-checker"
 version = "0.1.0"
 dependencies = [
  "km-derive",
- "rand",
 ]
 
 [[package]]
