@@ -85,7 +85,7 @@ impl FileSystem {
     }
 
     /// Create an empty file system, initializing the root directory.
-    pub fn new_bare(uid: u32, gid: u32) -> Self {
+    pub fn new_root(uid: u32, gid: u32) -> Self {
         // Set the current working directory to root.
         let cwd = AbsPath::root();
         // Initialize the file descriptor table.

@@ -57,6 +57,18 @@ pub struct FsTestPort {
 }
 
 impl FsTestPort {
+    /// Create a new `FsTestPort`.
+    pub fn new(cmd_addr: usize, retv_addr: usize, data_addr: usize) -> Self {
+        Self {
+            cmd_chan: MemCommandChannel::new(QemuMem, QemuMem, cmd_addr, retv_addr, data_addr),
+            cwd: AbsPath::root(),
+            fs: MultiKeyMap::new(),
+            stack: Vec::new(),
+            seen_inodes: HashMap::new(),
+            step: Step::Open,
+        }
+    }
+
     /// Get the stack top inode.
     fn top(&self) -> &(isize, String) {
         self.stack.last().unwrap()
