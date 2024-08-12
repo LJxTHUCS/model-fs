@@ -34,8 +34,8 @@ impl ToString for AbsPath {
 
 impl AbsPath {
     /// Create a new absolute path.
-    pub fn new(path: String) -> Self {
-        Self(path)
+    pub fn new(path: &str) -> Result<Self, FsError> {
+        Self::normalize(path)
     }
 
     /// Root absolute path.

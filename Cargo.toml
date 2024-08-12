@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-km-checker = { path = "../framework/km-checker", features = ["derive"] }
+km-checker = { path = "../framework/km-checker", features = ["derive", "qemu"] }
 km-command = { path = "../framework/km-command", features = ["checker", "postcard"] }
 multi-key-map = { path = "../multi-key-map" }
 cmdgen = { path = "../cmdgen" }

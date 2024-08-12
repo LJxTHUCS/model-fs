@@ -1,8 +1,8 @@
+use crate::error::FsError;
 use crate::inode::Inode;
 use crate::path::AbsPath;
-use crate::{error::FsError, inode::FileKind};
 use km_checker::AbstractState;
-use km_command::fs::{FileMode, OpenFlags, Path};
+use km_command::fs::{FileKind, FileMode, OpenFlags, Path};
 use multi_key_map::MultiKeyMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -61,15 +61,31 @@ impl Debug for FileSystem {
         let mut paths = self.inodes.keys();
         paths.sort();
         for path in paths {
-            f.write_fmt(format_args!("{:?}\t {:?}\n", path, self.inodes.get(&path).unwrap()))?;
+            f.write_fmt(format_args!(
+                "{:?}\t {:?}\n",
+                path,
+                self.inodes.get(&path).unwrap()
+            ))?;
         }
         Ok(())
     }
 }
 
 impl FileSystem {
-    /// Create a new file system, initializing the root directory.
-    pub fn new(uid: u32, gid: u32) -> Self {
+    /// Create a file system.
+    pub fn new(inodes: MultiKeyMap<AbsPath, Inode>, cwd: AbsPath, uid: u32, gid: u32) -> Self {
+        const NONE_FD: Option<Arc<FileDescriptor>> = None;
+        Self {
+            inodes,
+            cwd,
+            uid,
+            gid,
+            fd_table: [NONE_FD; FD_TABLE_SIZE],
+        }
+    }
+
+    /// Create an empty file system, initializing the root directory.
+    pub fn new_bare(uid: u32, gid: u32) -> Self {
         // Set the current working directory to root.
         let cwd = AbsPath::root();
         // Initialize the file descriptor table.

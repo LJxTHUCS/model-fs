@@ -1,21 +1,4 @@
-use km_checker::AbstractState;
-use km_command::fs::FileMode;
-
-/// File kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FileKind {
-    File,
-    Directory,
-}
-
-impl AbstractState for FileKind {
-    fn matches(&self, other: &Self) -> bool {
-        self == other
-    }
-    fn update(&mut self, other: &Self) {
-        *self = *other;
-    }
-}
+use km_command::fs::{FileKind, FileMode, FileStat};
 
 /// File system I-node type, regular file or directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +27,16 @@ impl Inode {
             gid,
             nlink,
             kind,
+        }
+    }
+    /// Create an inode file file stat.
+    pub fn from_stat(stat: &FileStat) -> Self {
+        Self {
+            mode: stat.mode,
+            uid: stat.uid,
+            gid: stat.gid,
+            nlink: stat.nlink,
+            kind: stat.kind,
         }
     }
     /// Check if the file is a directory.
