@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 /// File descriptor table entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileDescriptor {
     pub path: AbsPath,
     pub flags: OpenFlags,
@@ -72,7 +72,7 @@ impl Debug for FileSystem {
 }
 
 impl FileSystem {
-    /// Create a file system.
+    /// Create a file system with given inodes.
     pub fn new(inodes: MultiKeyMap<AbsPath, Inode>, cwd: AbsPath, uid: u32, gid: u32) -> Self {
         const NONE_FD: Option<Arc<FileDescriptor>> = None;
         Self {
@@ -106,6 +106,13 @@ impl FileSystem {
             Inode::new(FileMode::all(), uid, gid, FileKind::Directory),
         );
         fs
+    }
+
+    /// Open `stdin`, `stdout` and `stderr`.
+    pub fn open_stdio(&mut self) {
+        for i in 0..3 {
+            self.fd_table[i] = Some(Arc::new(FileDescriptor::default()))
+        }
     }
 
     /// Check if `path` exists.
@@ -211,7 +218,7 @@ impl FileSystem {
         Ok(())
     }
 
-    /// Get all available file descriptors.
+    /// Get all allocated file descriptors.
     pub fn all_fds(&self) -> Vec<isize> {
         self.fd_table
             .iter()
@@ -232,6 +239,7 @@ impl FileSystem {
 
     /// Find the lowest available posistion in the fd table and write `fd` into it.
     pub fn alloc_fd(&mut self, fd: Arc<FileDescriptor>) -> Result<isize, FsError> {
+        println!("fd_table: {:?}", self.all_fds());
         for (i, e) in self.fd_table.iter_mut().enumerate() {
             if e.is_none() {
                 *e = Some(fd);
