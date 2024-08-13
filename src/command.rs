@@ -1,6 +1,6 @@
 use crate::fs::{FileDescriptor, FileSystem};
 use km_checker::model_command;
-use km_command::fs::{FileKind, OpenFlags};
+use km_command::fs::{FileKind, OpenFlags, UnlinkatFlags};
 use std::sync::Arc;
 
 model_command!(km_command::fs, Chdir, FileSystem, {
@@ -55,8 +55,9 @@ model_command!(km_command::fs, Unlinkat, FileSystem, {
     (|| {
         // Parse paths
         let path = state!().parse_path(get!(dirfd), get!(path).clone())?;
+        let rmdir = get!(flags).contains(UnlinkatFlags::REMOVEDIR);
         // Link file
-        state!().unlink(&path)
+        state!().unlink(&path, rmdir)
     })()
     .map_or_else(|e| e.into(), |_| 0)
 });

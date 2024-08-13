@@ -161,25 +161,33 @@ impl FileSystem {
     }
 
     /// Delete a name and possibly the inode it refer to
-    pub fn unlink(&mut self, path: &AbsPath) -> Result<(), FsError> {
+    pub fn unlink(&mut self, path: &AbsPath, rmdir: bool) -> Result<(), FsError> {
         if path.is_root() {
             return Err(FsError::InvalidPath);
         }
         if !self.exists(path) {
             return Err(FsError::NotFound);
         }
-        if !self.is_empty_dir(path) {
-            return Err(FsError::DirectoryNotEmpty);
-        }
-        // If inode is a directory, update parent link count
         if self.is_dir(path) {
+            if !rmdir {
+                return Err(FsError::IsDirectory);
+            }
+            if !self.is_empty_dir(path) {
+                return Err(FsError::DirectoryNotEmpty);
+            }
+            // If inode is a directory, update parent link count
             self.decrease_nlink(&path.parent().unwrap())?;
+        } else {
+            if rmdir {
+                return Err(FsError::NotDirectory);
+            }
         }
         // Unlink the inode.
         let aliases = self.inodes.aliases(path).unwrap();
         let nlink = self.inodes.remove_alias(path).unwrap();
-        // If inode is not removed, update link count
         if nlink != 0 {
+            // If inode is not removed, update link count
+            // Find another alias to get access to the inode
             self.decrease_nlink(aliases.iter().find(|&e| e != path).unwrap())?;
         }
         Ok(())
@@ -239,7 +247,6 @@ impl FileSystem {
 
     /// Find the lowest available posistion in the fd table and write `fd` into it.
     pub fn alloc_fd(&mut self, fd: Arc<FileDescriptor>) -> Result<isize, FsError> {
-        println!("fd_table: {:?}", self.all_fds());
         for (i, e) in self.fd_table.iter_mut().enumerate() {
             if e.is_none() {
                 *e = Some(fd);

@@ -89,6 +89,7 @@ impl Commander<FileSystem> for FsCommander {
         oflags_gen.exclude(OpenFlags::DIRECTORY);
         let mut fmode_gen = RandomFlags::new(0.4);
         fmode_gen.include(FileMode::USER_READ);
+        let mut unlinkat_flags_gen = RandomFlags::new(0.3);
 
         // Generate
         let cmd: Box<dyn Command<FileSystem>> = match cmd_gen.generate() {
@@ -108,6 +109,7 @@ impl Commander<FileSystem> for FsCommander {
             CommandType::Unlinkat => Box::new(ModelUnlinkat(Unlinkat::new(
                 fd_gen.generate(),
                 rel_path_gen.generate(),
+                unlinkat_flags_gen.generate(),
             ))),
             CommandType::Linkat => Box::new(ModelLinkat(Linkat::new(
                 fd_gen.generate(),
