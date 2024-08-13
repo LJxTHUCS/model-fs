@@ -13,6 +13,8 @@ pub enum FsError {
     IsDirectory,
     /// File is not a directory.
     NotDirectory,
+    /// Fd is out of range.
+    FdOutOfRange,
     /// File not opened.
     NotOpened,
     /// No available file descriptor.
@@ -31,8 +33,9 @@ impl Into<isize> for FsError {
             FsError::AlreadyExists => linux_err!(EEXIST),
             FsError::IsDirectory => linux_err!(EISDIR),
             FsError::NotDirectory => linux_err!(ENOTDIR),
-            FsError::NotOpened => linux_err!(EBADFD),
-            FsError::NoAvailableFd => linux_err!(EBADFD),
+            FsError::FdOutOfRange => linux_err!(EBADF),
+            FsError::NotOpened => linux_err!(EBADF),
+            FsError::NoAvailableFd => linux_err!(EBADF),
             FsError::InvalidPath => linux_err!(EINVAL),
             FsError::DirectoryNotEmpty => linux_err!(ENOTEMPTY),
         }

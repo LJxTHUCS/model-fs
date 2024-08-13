@@ -8,7 +8,7 @@ use km_checker::{Command, Commander, Error};
 use km_command::fs::{Chdir, Close, Dup, FileMode, Linkat, Mkdirat, OpenFlags, Openat, Unlinkat};
 use std::str::FromStr;
 
-const NAMES: [&str; 7] = ["foo", "bar", "baz", "foobar", "bbb", "a", "aa"];
+const NAMES: [&str; 7] = ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg"];
 
 pub struct FsCommander;
 

@@ -224,7 +224,7 @@ impl FileSystem {
     /// Get file descriptor by fd.
     pub fn get_fd(&self, fd: isize) -> Result<Arc<FileDescriptor>, FsError> {
         if fd < 0 || fd as usize >= self.fd_table.len() {
-            return Err(FsError::NotOpened);
+            return Err(FsError::FdOutOfRange);
         } else {
             self.fd_table[fd as usize].clone().ok_or(FsError::NotOpened)
         }
