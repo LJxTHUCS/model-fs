@@ -1,5 +1,4 @@
 use crate::error::FsError;
-use km_checker::AbstractState;
 use km_command::fs::Path;
 use std::{fmt::Debug, vec};
 
@@ -7,7 +6,7 @@ use std::{fmt::Debug, vec};
 ///
 /// - Cannot contain "." or "..".
 /// - Cannot start or end with "/".
-#[derive(Clone, PartialEq, Eq, Hash, AbstractState, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct AbsPath(String);
 
 impl Debug for AbsPath {
