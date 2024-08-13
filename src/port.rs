@@ -1,7 +1,7 @@
 use crate::{
     command::{
         Close as ModelClose, Fstat as ModelFstat, Getcwd as ModelGetcwd, Getdents as ModelGetdents,
-        Openat as ModelOpenat,
+        Nop, Openat as ModelOpenat,
     },
     inode::Inode,
     path::AbsPath,
@@ -96,7 +96,7 @@ impl FsTestPort {
     /// Open inode `name` relative to the stack top directory.
     /// Send `openat` command to target kernel.
     fn openat_command(&mut self, name: &str) -> Result<(), Error> {
-        self.send_command(&ModelOpenat::from(Openat::new(
+        self.send_command(&ModelOpenat(Openat::new(
             self.top().0,
             Path(heapless::String::from_str(name).unwrap()),
             OpenFlags::RDONLY,
@@ -106,8 +106,9 @@ impl FsTestPort {
 
     /// Get the newly opened fd from target kernel.
     fn openat_result(&mut self) -> Result<isize, Error> {
-        if self.receive_retv() >= 0 {
-            Ok(self.receive_retv())
+        let retv = self.receive_retv();
+        if retv >= 0 {
+            Ok(retv)
         } else {
             Err(Error::Io)
         }
@@ -116,7 +117,7 @@ impl FsTestPort {
     /// Read a directory entry from the stack top directory.
     /// Send `getdents` command to target kernel.
     fn getdents_command(&mut self) -> Result<(), Error> {
-        self.send_command(&ModelGetdents::from(Getdents::new(self.top().0, 1)))
+        self.send_command(&ModelGetdents(Getdents::new(self.top().0, 1)))
     }
 
     /// Get the newly read directory entry from target kernel.
@@ -135,7 +136,7 @@ impl FsTestPort {
     /// Get the file status of the stack top inode.
     /// Send `fstat` command to target kernel.
     fn fstat_command(&mut self) -> Result<(), Error> {
-        self.send_command(&ModelFstat::from(Fstat::new(self.top().0)))
+        self.send_command(&ModelFstat(Fstat::new(self.top().0)))
     }
 
     /// Get the newly read file status from target kernel.
@@ -151,7 +152,7 @@ impl FsTestPort {
     /// Close the stack top inode.
     /// Send `close` command to target kernel.
     fn close_command(&mut self) -> Result<(), Error> {
-        self.send_command(&ModelClose::from(Close::new(self.top().0)))
+        self.send_command(&ModelClose(Close::new(self.top().0)))
     }
 
     /// Get close result from target kernel.
@@ -166,7 +167,7 @@ impl FsTestPort {
     /// Get current working directory.
     /// Send `getcwd` command to target kernel.
     fn getcwd_command(&mut self) -> Result<(), Error> {
-        self.send_command(&ModelGetcwd::from(Getcwd::new()))
+        self.send_command(&ModelGetcwd(Getcwd::new()))
     }
 
     /// Get current working directory from target kernel.
@@ -207,7 +208,8 @@ impl StateChannel<FileSystem> for FsTestPort {
         self.seen_inodes.clear();
         self.fs.clear();
         // Open root directory
-        self.stack.push((-1, String::new()));
+        // Push to stack, fd is set later
+        self.stack.push((0, String::new()));
         self.openat_command("/")?;
         self.step = Step::Open;
         Ok(())
@@ -271,9 +273,9 @@ impl StateChannel<FileSystem> for FsTestPort {
                         self.getdents_command()?;
                         self.step = Step::Getdents;
                     } else {
+                        self.openat_command(dent.name())?;
                         // Push to stack, fd will be updated later.
                         self.stack.push((-1, dent.name().to_owned()));
-                        self.openat_command(dent.name())?;
                         self.step = Step::Open;
                     }
                 } else {
@@ -291,6 +293,7 @@ impl StateChannel<FileSystem> for FsTestPort {
     }
 
     fn finish_state_retrieval(&mut self) -> Result<FileSystem, Error> {
+        self.send_command(&Nop(km_command::Nop {}))?;
         Ok(FileSystem::new(self.fs.clone(), self.cwd.clone(), 0, 0))
     }
 }

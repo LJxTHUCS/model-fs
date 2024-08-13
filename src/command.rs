@@ -81,3 +81,5 @@ model_command!(km_command::fs, Fstat, FileSystem, { 0 });
 model_command!(km_command::fs, Getdents, FileSystem, { 0 });
 
 model_command!(km_command::fs, Getcwd, FileSystem, { 0 });
+
+model_command!(km_command, Nop, FileSystem, { 0 });

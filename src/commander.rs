@@ -38,32 +38,32 @@ impl Commander<FileSystem> for FsCommander {
 
         // Generate
         let cmd: Box<dyn Command<FileSystem>> = match cmd_gen.generate() {
-            0 => Box::new(ModelOpenat::from(Openat::new(
+            0 => Box::new(ModelOpenat(Openat::new(
                 fd_gen.generate(),
                 translate_rel_path(&rel_path_gen.generate()),
                 OpenFlags::from_bits_truncate(oflags_gen.generate()),
                 FileMode::from_bits_truncate(fmode_gen.generate()),
             ))),
-            1 => Box::new(ModelClose::from(Close::new(fd_gen.generate()))),
-            2 => Box::new(ModelChdir::from(Chdir::new(translate_abs_path(
+            1 => Box::new(ModelClose(Close::new(fd_gen.generate()))),
+            2 => Box::new(ModelChdir(Chdir::new(translate_abs_path(
                 &abs_path_gen.generate(),
             )))),
-            3 => Box::new(ModelMkdirat::from(Mkdirat::new(
+            3 => Box::new(ModelMkdirat(Mkdirat::new(
                 fd_gen.generate(),
                 translate_rel_path(&rel_path_gen.generate()),
                 FileMode::from_bits_truncate(fmode_gen.generate()),
             ))),
-            4 => Box::new(ModelUnlinkat::from(Unlinkat::new(
+            4 => Box::new(ModelUnlinkat(Unlinkat::new(
                 fd_gen.generate(),
                 translate_rel_path(&rel_path_gen.generate()),
             ))),
-            5 => Box::new(ModelLinkat::from(Linkat::new(
+            5 => Box::new(ModelLinkat(Linkat::new(
                 fd_gen.generate(),
                 translate_rel_path(&rel_path_gen.generate()),
                 fd_gen.generate(),
                 translate_rel_path(&rel_path_gen.generate()),
             ))),
-            6 => Box::new(ModelDup::from(Dup::new(fd_gen.generate()))),
+            6 => Box::new(ModelDup(Dup::new(fd_gen.generate()))),
             _ => unreachable!(),
         };
         Ok(cmd)
