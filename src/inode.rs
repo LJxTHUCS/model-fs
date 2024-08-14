@@ -1,7 +1,7 @@
 use km_command::fs::{FileKind, FileMode, FileStat};
 
 /// File system I-node type, regular file or directory.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Inode {
     /// File model.
     pub mode: FileMode,
@@ -14,6 +14,26 @@ pub struct Inode {
     /// File kind.
     pub kind: FileKind,
 }
+
+#[cfg(feature = "fat")]
+impl PartialEq for Inode {
+    fn eq(&self, other: &Self) -> bool {
+        self.uid == other.uid && self.gid == other.gid && self.kind == other.kind
+    }
+}
+
+#[cfg(not(feature = "fat"))]
+impl PartialEq for Inode {
+    fn eq(&self, other: &Self) -> bool {
+        self.mode == other.mode
+            && self.uid == other.uid
+            && self.gid == other.gid
+            && self.nlink == other.nlink
+            && self.kind == other.kind
+    }
+}
+
+impl Eq for Inode {}
 
 impl Inode {
     /// Create a new inode.
