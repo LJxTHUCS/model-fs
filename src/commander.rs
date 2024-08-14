@@ -70,9 +70,7 @@ impl Commander<FileSystem> for FsCommander {
             ),
         );
         let mut abs_path_gen = UniformCollection::new(
-            state
-                .inodes
-                .keys()
+            state.paths()
                 .into_iter()
                 .map(|k| {
                     Path(heapless::String::from_str(&("/".to_owned() + &k.to_string())).unwrap())

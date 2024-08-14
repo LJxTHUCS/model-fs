@@ -35,7 +35,7 @@ impl Into<isize> for FsError {
             FsError::NotDirectory => linux_err!(ENOTDIR),
             FsError::FdOutOfRange => linux_err!(EBADF),
             FsError::NotOpened => linux_err!(EBADF),
-            FsError::NoAvailableFd => linux_err!(EBADF),
+            FsError::NoAvailableFd => linux_err!(EMFILE),
             FsError::InvalidPath => linux_err!(EINVAL),
             FsError::DirectoryNotEmpty => linux_err!(ENOTEMPTY),
         }

@@ -4,14 +4,43 @@ use crate::path::AbsPath;
 use km_checker::AbstractState;
 use km_command::fs::{FileKind, FileMode, OpenFlags, Path};
 use multi_key_map::MultiKeyMap;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::usize;
+
+/// File descriptor reference file type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FdRefType {
+    /// An existing file, noted by an absolute path.
+    Existing(AbsPath),
+    /// A temporary file, noted by an index in the temporary inode list.
+    Temporary(usize),
+}
 
 /// File descriptor table entry.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FileDescriptor {
-    pub path: AbsPath,
-    pub flags: OpenFlags,
+    fref: FdRefType,
+    flags: OpenFlags,
+}
+
+impl FileDescriptor {
+    /// Create a file descriptor, which refers to an existing file.
+    pub fn new_path(path: AbsPath, flags: OpenFlags) -> Self {
+        Self {
+            fref: FdRefType::Existing(path),
+            flags,
+        }
+    }
+    /// Create a file descriptor, which refers to a temporary file.
+    pub fn new_tmp(idx: usize, flags: OpenFlags) -> Self {
+        Self {
+            fref: FdRefType::Temporary(idx),
+            flags,
+        }
+    }
 }
 
 /// File descriptor table size.
@@ -24,16 +53,21 @@ pub const FDCWD: isize = -100;
 #[derive(Clone)]
 pub struct FileSystem {
     /// User ID.
-    pub uid: u32,
+    uid: u32,
     /// Group ID.
-    pub gid: u32,
+    gid: u32,
     /// Inodes. An inode may have multiple absolutes paths (hard links).
     /// Each key is corresponding to an absolute path.
-    pub inodes: MultiKeyMap<AbsPath, Inode>,
+    inodes: MultiKeyMap<AbsPath, Inode>,
     /// Current working directory.
-    pub cwd: AbsPath,
+    cwd: AbsPath,
     /// File descriptor table.
-    pub fd_table: [Option<Arc<FileDescriptor>>; FD_TABLE_SIZE],
+    fd_table: [Option<Rc<RefCell<FileDescriptor>>>; FD_TABLE_SIZE],
+    /// Temporary inodes. Inodes deleted but still referenced by file descriptors
+    /// will be stored here.
+    tmp_inodes: HashMap<usize, Inode>,
+    /// Next temporary inode index.
+    tmp_idx: usize,
 }
 
 impl AbstractState for FileSystem {
@@ -67,11 +101,15 @@ impl Debug for FileSystem {
                 self.inodes.get(&path).unwrap()
             ))?;
         }
-        f.write_str("File descriptor table:\n")?;
+        f.write_str("<Not Checked> File descriptor table:\n")?;
         for (i, e) in self.fd_table.iter().enumerate() {
             if let Some(fd) = e {
                 f.write_fmt(format_args!("[{}]\t {:?}\n", i, fd))?
             }
+        }
+        f.write_str("<Not Checked> Temporary inodes:\n")?;
+        for (i, inode) in self.tmp_inodes.iter() {
+            f.write_fmt(format_args!("[{}]\t {:?}\n", i, inode))?
         }
         Ok(())
     }
@@ -80,13 +118,15 @@ impl Debug for FileSystem {
 impl FileSystem {
     /// Create a file system with given inodes.
     pub fn new(inodes: MultiKeyMap<AbsPath, Inode>, cwd: AbsPath, uid: u32, gid: u32) -> Self {
-        const NONE_FD: Option<Arc<FileDescriptor>> = None;
+        const NONE_FD: Option<Rc<RefCell<FileDescriptor>>> = None;
         Self {
-            inodes,
-            cwd,
             uid,
             gid,
+            inodes,
+            cwd,
             fd_table: [NONE_FD; FD_TABLE_SIZE],
+            tmp_inodes: HashMap::new(),
+            tmp_idx: 0,
         }
     }
 
@@ -95,7 +135,7 @@ impl FileSystem {
         // Set the current working directory to root.
         let cwd = AbsPath::root();
         // Initialize the file descriptor table.
-        const NONE_FD: Option<Arc<FileDescriptor>> = None;
+        const NONE_FD: Option<Rc<RefCell<FileDescriptor>>> = None;
         let fd_table = [NONE_FD; FD_TABLE_SIZE];
         // Create fs.
         let mut fs = Self {
@@ -104,6 +144,8 @@ impl FileSystem {
             inodes: MultiKeyMap::new(),
             cwd,
             fd_table,
+            tmp_inodes: HashMap::new(),
+            tmp_idx: 0,
         };
         // Initialize root directory. The `nlink` of the root directory is 2
         // ("." and ".."), which also matches the initialization of the inode.
@@ -117,7 +159,10 @@ impl FileSystem {
     /// Open `stdin`, `stdout` and `stderr`.
     pub fn open_stdio(&mut self) {
         for i in 0..3 {
-            self.fd_table[i] = Some(Arc::new(FileDescriptor::default()))
+            self.fd_table[i] = Some(Rc::new(RefCell::new(FileDescriptor::new_tmp(
+                usize::MAX,
+                OpenFlags::empty(),
+            ))))
         }
     }
 
@@ -137,6 +182,11 @@ impl FileSystem {
     /// Check if `path` exists and is an empty directory.
     pub fn is_empty_dir(&self, path: &AbsPath) -> bool {
         self.is_dir(path) && self.inodes.keys().iter().all(|k| !path.is_ancestor(k))
+    }
+
+    /// Get all valid paths in the file system.
+    pub fn paths(&self) -> Vec<AbsPath> {
+        self.inodes.keys()
     }
 
     /// Lookup the inode by path.
@@ -189,12 +239,53 @@ impl FileSystem {
             }
         }
         // Unlink the inode.
+        // Get all fds referring to the inode.
+        let related_fds = self
+            .all_fds()
+            .into_iter()
+            .filter(|&fd| {
+                self.ref_same_inode(
+                    &self.fd_table[fd as usize].as_ref().unwrap().borrow().fref,
+                    &FdRefType::Existing(path.clone()),
+                )
+            })
+            .collect::<Vec<_>>();
         let aliases = self.inodes.aliases(path).unwrap();
-        let nlink = self.inodes.remove_alias(path).unwrap();
-        if nlink != 0 {
-            // If inode is not removed, update link count
-            // Find another alias to get access to the inode
-            self.decrease_nlink(aliases.iter().find(|&e| e != path).unwrap())?;
+        if aliases.len() == 1 {
+            // The inode will be removed. If there are fd pointing to it,
+            // the inode will be collected in `tmp_inodes`.
+            let inode = self.inodes.remove(path).unwrap();
+            if !related_fds.is_empty() {
+                // Some fds pointing to the inode, update their fref.
+                for fd in related_fds {
+                    self.fd_table[fd as usize]
+                        .as_mut()
+                        .unwrap()
+                        .borrow_mut()
+                        .fref = FdRefType::Temporary(self.tmp_idx);
+                }
+                // Collect the inode in `tmp_inodes`.
+                self.tmp_inodes.insert(self.tmp_idx, inode);
+                self.tmp_idx += 1;
+            }
+        } else {
+            // The inode is still referenced by other paths, just remove the alias.
+            self.inodes.remove_alias(path).unwrap();
+            self.decrease_nlink(path)?;
+            if !related_fds.is_empty() {
+                // Some fds pointing to the inode, update their fref.
+                let another_path = aliases
+                    .into_iter()
+                    .find(|p| self.inodes.contains_key(p))
+                    .unwrap();
+                for fd in related_fds {
+                    self.fd_table[fd as usize]
+                        .as_mut()
+                        .unwrap()
+                        .borrow_mut()
+                        .fref = FdRefType::Existing(another_path.clone());
+                }
+            }
         }
         Ok(())
     }
@@ -243,7 +334,7 @@ impl FileSystem {
     }
 
     /// Get file descriptor by fd.
-    pub fn get_fd(&self, fd: isize) -> Result<Arc<FileDescriptor>, FsError> {
+    pub fn get_fd(&self, fd: isize) -> Result<Rc<RefCell<FileDescriptor>>, FsError> {
         if fd < 0 || fd as usize >= self.fd_table.len() {
             return Err(FsError::FdOutOfRange);
         } else {
@@ -252,7 +343,7 @@ impl FileSystem {
     }
 
     /// Find the lowest available posistion in the fd table and write `fd` into it.
-    pub fn alloc_fd(&mut self, fd: Arc<FileDescriptor>) -> Result<isize, FsError> {
+    pub fn alloc_fd(&mut self, fd: Rc<RefCell<FileDescriptor>>) -> Result<isize, FsError> {
         for (i, e) in self.fd_table.iter_mut().enumerate() {
             if e.is_none() {
                 *e = Some(fd);
@@ -300,13 +391,18 @@ impl FileSystem {
                 Ok(self.cwd.join(&path.try_into()?)?)
             } else {
                 let fd = self.get_fd(dirfd)?;
-                if !self.exists(&fd.path) {
-                    return Err(FsError::NotFound);
+                let fref = &fd.borrow().fref;
+                if let FdRefType::Existing(p) = fref {
+                    if !self.exists(&p) {
+                        return Err(FsError::NotFound);
+                    }
+                    if !self.is_dir(&p) {
+                        return Err(FsError::NotDirectory);
+                    }
+                    Ok(p.join(&path.try_into()?)?)
+                } else {
+                    Err(FsError::NotFound)
                 }
-                if !self.is_dir(&fd.path) {
-                    return Err(FsError::NotDirectory);
-                }
-                Ok(fd.path.join(&path.try_into()?)?)
             }
         }
     }
@@ -323,5 +419,14 @@ impl FileSystem {
         let inode = self.inodes.get_mut(path).ok_or(FsError::NotFound)?;
         inode.nlink -= 1;
         Ok(())
+    }
+
+    /// Check if 2 `FdRefType`s referring to the same inode.
+    fn ref_same_inode(&self, a: &FdRefType, b: &FdRefType) -> bool {
+        match (a, b) {
+            (FdRefType::Existing(a), FdRefType::Existing(b)) => self.inodes.are_aliases(a, b),
+            (FdRefType::Temporary(a), FdRefType::Temporary(b)) => a == b,
+            _ => false,
+        }
     }
 }
