@@ -240,16 +240,7 @@ impl FileSystem {
         }
         // Unlink the inode.
         // Get all fds referring to the inode.
-        let related_fds = self
-            .all_fds()
-            .into_iter()
-            .filter(|&fd| {
-                self.ref_same_inode(
-                    &self.fd_table[fd as usize].as_ref().unwrap().borrow().fref,
-                    &FdRefType::Existing(path.clone()),
-                )
-            })
-            .collect::<Vec<_>>();
+        let related_fds = self.all_fds_ref_same_inode(&FdRefType::Existing(path.clone()));
         let aliases = self.inodes.aliases(path).unwrap();
         if aliases.len() == 1 {
             // The inode will be removed. If there are fd pointing to it,
@@ -356,7 +347,17 @@ impl FileSystem {
     /// Free the file descriptor.
     pub fn free_fd(&mut self, fd: isize) -> Result<(), FsError> {
         if self.get_fd(fd).is_ok() {
-            self.fd_table[fd as usize] = None;
+            let fd = self.fd_table[fd as usize].take().unwrap();
+            let fref = &fd.borrow().fref;
+            if let FdRefType::Temporary(idx) = fref {
+                // If the file descriptor refers to a temporary file, and
+                // there is no other file descriptor referring to the same
+                // inode, then remove the inode.
+                let related_fds = self.all_fds_ref_same_inode(fref);
+                if related_fds.len() == 1 {
+                    self.tmp_inodes.remove(idx);
+                }
+            }
             Ok(())
         } else {
             Err(FsError::NotOpened)
@@ -421,12 +422,25 @@ impl FileSystem {
         Ok(())
     }
 
-    /// Check if 2 `FdRefType`s referring to the same inode.
+    /// Check if 2 frefs refer to the same inode.
     fn ref_same_inode(&self, a: &FdRefType, b: &FdRefType) -> bool {
         match (a, b) {
             (FdRefType::Existing(a), FdRefType::Existing(b)) => self.inodes.are_aliases(a, b),
             (FdRefType::Temporary(a), FdRefType::Temporary(b)) => a == b,
             _ => false,
         }
+    }
+
+    /// Get all file descriptors referring to the same inode as `fref`
+    fn all_fds_ref_same_inode(&self, fref: &FdRefType) -> Vec<isize> {
+        self.all_fds()
+            .into_iter()
+            .filter(|&fd| {
+                self.ref_same_inode(
+                    &self.fd_table[fd as usize].as_ref().unwrap().borrow().fref,
+                    fref,
+                )
+            })
+            .collect()
     }
 }
