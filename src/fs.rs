@@ -57,7 +57,7 @@ impl Debug for FileSystem {
         f.write_fmt(format_args!("  cwd: {:?}\n", self.cwd))?;
         f.write_fmt(format_args!("  uid: {}\n", self.uid))?;
         f.write_fmt(format_args!("  gid: {}\n", self.gid))?;
-        f.write_str("directory structure:\n")?;
+        f.write_str("Directory structure:\n")?;
         let mut paths = self.inodes.keys();
         paths.sort();
         for path in paths {
@@ -66,6 +66,12 @@ impl Debug for FileSystem {
                 path,
                 self.inodes.get(&path).unwrap()
             ))?;
+        }
+        f.write_str("File descriptor table:\n")?;
+        for (i, e) in self.fd_table.iter().enumerate() {
+            if let Some(fd) = e {
+                f.write_fmt(format_args!("[{}]\t {:?}\n", i, fd))?
+            }
         }
         Ok(())
     }
