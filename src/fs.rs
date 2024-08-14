@@ -14,7 +14,7 @@ use std::usize;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FdRefType {
     /// An existing file, noted by an absolute path.
-    Existing(AbsPath),
+    Permanent(AbsPath),
     /// A temporary file, noted by an index in the temporary inode list.
     Temporary(usize),
 }
@@ -27,10 +27,10 @@ pub struct FileDescriptor {
 }
 
 impl FileDescriptor {
-    /// Create a file descriptor, which refers to an existing file.
-    pub fn new_path(path: AbsPath, flags: OpenFlags) -> Self {
+    /// Create a file descriptor, which refers to a permanent file.
+    pub fn new_perm(path: AbsPath, flags: OpenFlags) -> Self {
         Self {
-            fref: FdRefType::Existing(path),
+            fref: FdRefType::Permanent(path),
             flags,
         }
     }
@@ -240,7 +240,7 @@ impl FileSystem {
         }
         // Unlink the inode.
         // Get all fds referring to the inode.
-        let related_fds = self.all_fds_ref_same_inode(&FdRefType::Existing(path.clone()));
+        let related_fds = self.all_fds_ref_same_inode(&FdRefType::Permanent(path.clone()));
         let aliases = self.inodes.aliases(path).unwrap();
         if aliases.len() == 1 {
             // The inode will be removed. If there are fd pointing to it,
@@ -274,7 +274,7 @@ impl FileSystem {
                         .as_mut()
                         .unwrap()
                         .borrow_mut()
-                        .fref = FdRefType::Existing(another_path.clone());
+                        .fref = FdRefType::Permanent(another_path.clone());
                 }
             }
         }
@@ -354,7 +354,7 @@ impl FileSystem {
                 // there is no other file descriptor referring to the same
                 // inode, then remove the inode.
                 let related_fds = self.all_fds_ref_same_inode(fref);
-                if related_fds.len() == 1 {
+                if related_fds.is_empty() {
                     self.tmp_inodes.remove(idx);
                 }
             }
@@ -384,6 +384,10 @@ impl FileSystem {
     ///       flag.
     ///
     /// Ref: https://man7.org/linux/man-pages/man2/open.2.html
+    ///
+    /// If `dirfd` refers to a temporary file, then `NotDirectory` error is returned.
+    /// If `dirfd` refers to a temporary directory, then `NotFound` is returned because
+    /// a path relative to a temporary directory does not exist in the file system.
     pub fn parse_path(&self, dirfd: isize, path: Path) -> Result<AbsPath, FsError> {
         if path.absolute() {
             path.try_into()
@@ -393,16 +397,24 @@ impl FileSystem {
             } else {
                 let fd = self.get_fd(dirfd)?;
                 let fref = &fd.borrow().fref;
-                if let FdRefType::Existing(p) = fref {
-                    if !self.exists(&p) {
-                        return Err(FsError::NotFound);
+                match fref {
+                    FdRefType::Permanent(p) => {
+                        if !self.exists(&p) {
+                            return Err(FsError::NotFound);
+                        }
+                        if !self.is_dir(&p) {
+                            return Err(FsError::NotDirectory);
+                        }
+                        Ok(p.join(&path.try_into()?)?)
                     }
-                    if !self.is_dir(&p) {
-                        return Err(FsError::NotDirectory);
+                    FdRefType::Temporary(id) => {
+                        let inode = self.tmp_inodes.get(id).ok_or(FsError::NotFound)?;
+                        if !inode.is_dir() {
+                            Err(FsError::NotDirectory)
+                        } else {
+                            Err(FsError::NotFound)
+                        }
                     }
-                    Ok(p.join(&path.try_into()?)?)
-                } else {
-                    Err(FsError::NotFound)
                 }
             }
         }
@@ -425,7 +437,7 @@ impl FileSystem {
     /// Check if 2 frefs refer to the same inode.
     fn ref_same_inode(&self, a: &FdRefType, b: &FdRefType) -> bool {
         match (a, b) {
-            (FdRefType::Existing(a), FdRefType::Existing(b)) => self.inodes.are_aliases(a, b),
+            (FdRefType::Permanent(a), FdRefType::Permanent(b)) => self.inodes.are_aliases(a, b),
             (FdRefType::Temporary(a), FdRefType::Temporary(b)) => a == b,
             _ => false,
         }

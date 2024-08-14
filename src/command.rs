@@ -21,7 +21,7 @@ model_command!(km_command::fs, Openat, FileSystem, {
             }
         }
         // Find available file descriptor
-        state!().alloc_fd(Rc::new(RefCell::new(FileDescriptor::new_path(
+        state!().alloc_fd(Rc::new(RefCell::new(FileDescriptor::new_perm(
             path,
             get!(flags),
         ))))
