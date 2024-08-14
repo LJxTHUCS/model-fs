@@ -233,14 +233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cmdgen"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "rand",
-]
-
-[[package]]
 name = "cobs"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -573,6 +565,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "km-gen"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "rand",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -850,10 +850,10 @@ name = "model-fs"
 version = "0.1.0"
 dependencies = [
  "bitflags",
- "cmdgen",
  "heapless 0.8.0",
  "km-checker",
  "km-command",
+ "km-gen",
  "multi-key-map",
 ]
 

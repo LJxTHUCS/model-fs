@@ -3,11 +3,11 @@ use crate::command::{
     Mkdirat as ModelMkdirat, Openat as ModelOpenat, Unlinkat as ModelUnlinkat,
 };
 use crate::fs::{FileSystem, FDCWD};
-use cmdgen::{Constant, DefaultOr, Generator, RandomFlags, SwitchConstant, UniformCollection};
 use km_checker::{Command, Commander, Error};
 use km_command::fs::{
     Chdir, Close, Dup, FileMode, Linkat, Mkdirat, OpenFlags, Openat, Path, Unlinkat,
 };
+use km_gen::{Constant, DefaultOr, Generator, RandomFlags, SwitchConstant, UniformCollection};
 use std::str::FromStr;
 
 /// Command type.
@@ -23,8 +23,8 @@ enum CommandType {
 }
 
 /// All available file names.
-// const NAMES: [&str; 7] = ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg"];
-const NAMES: [&str; 7] = ["a", "aa", "aaa", "aaaa", "aaaaa", "aaaaaa", "aaaaaaa"];
+const NAMES: [&str; 7] = ["aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg"];
+// const NAMES: [&str; 7] = ["a", "aa", "aaa", "aaaa", "aaaaa", "aaaaaa", "aaaaaaa"];
 
 #[cfg(not(feature = "fat"))]
 /// All available commands.
@@ -70,7 +70,8 @@ impl Commander<FileSystem> for FsCommander {
             ),
         );
         let mut abs_path_gen = UniformCollection::new(
-            state.paths()
+            state
+                .paths()
                 .into_iter()
                 .map(|k| {
                     Path(heapless::String::from_str(&("/".to_owned() + &k.to_string())).unwrap())
