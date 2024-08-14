@@ -92,19 +92,19 @@ impl Debug for FileSystem {
         f.write_fmt(format_args!("  uid: {}\n", self.uid))?;
         f.write_fmt(format_args!("  gid: {}\n", self.gid))?;
         f.write_str("Directory structure:\n")?;
-        let mut paths = self.inodes.keys();
+        let mut paths: Vec<_> = self.inodes.keys().collect();
         paths.sort();
         for path in paths {
             f.write_fmt(format_args!(
                 "{:?}\t {:?}\n",
                 path,
-                self.inodes.get(&path).unwrap()
+                self.inodes.get(path).unwrap()
             ))?;
         }
         f.write_str("<Not Checked> File descriptor table:\n")?;
         for (i, e) in self.fd_table.iter().enumerate() {
             if let Some(fd) = e {
-                f.write_fmt(format_args!("[{}]\t {:?}\n", i, fd))?
+                f.write_fmt(format_args!("[{}]\t {:?}\n", i, fd.borrow()))?
             }
         }
         f.write_str("<Not Checked> Temporary inodes:\n")?;
@@ -181,12 +181,12 @@ impl FileSystem {
 
     /// Check if `path` exists and is an empty directory.
     pub fn is_empty_dir(&self, path: &AbsPath) -> bool {
-        self.is_dir(path) && self.inodes.keys().iter().all(|k| !path.is_ancestor(k))
+        self.is_dir(path) && self.inodes.keys().all(|k| !path.is_ancestor(k))
     }
 
     /// Get all valid paths in the file system.
     pub fn paths(&self) -> Vec<AbsPath> {
-        self.inodes.keys()
+        self.inodes.keys().cloned().collect()
     }
 
     /// Lookup the inode by path.
